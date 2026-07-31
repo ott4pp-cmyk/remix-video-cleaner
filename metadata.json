@@ -1,0 +1,8 @@
+{
+  "name": "Remix AI Video Cleaner",
+  "description": "Automatically remove Gemini video watermarks and upscale the video with AI in your browser.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
