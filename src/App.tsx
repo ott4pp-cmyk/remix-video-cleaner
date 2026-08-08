@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Download, Loader2, Settings2 } from 'lucide-react';
+import { Upload, Download, Loader2, Settings2, ChevronDown } from 'lucide-react';
 import { VideoWatermarkAndUpscaleEngine, VIDEO_DEFAULTS } from './engine/processor';
 
 export default function App() {
@@ -15,6 +15,7 @@ export default function App() {
   const [sizeScale, setSizeScale] = useState(VIDEO_DEFAULTS.sizeScale);
   const [offsetX, setOffsetX] = useState(VIDEO_DEFAULTS.offsetX);
   const [offsetY, setOffsetY] = useState(VIDEO_DEFAULTS.offsetY);
+  const [resolutionMode, setResolutionMode] = useState('1080p');
   const [showSettings, setShowSettings] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +60,7 @@ export default function App() {
         sizeScale,
         offsetX,
         offsetY,
+        resolutionMode,
         onProgress: (p: any) => {
           setProgress(Math.round(p.progress * 100));
           if (p.status && p.currentFrame !== undefined) {
@@ -115,6 +117,23 @@ export default function App() {
 
               {!resultUrl && !isProcessing && (
                 <div className="space-y-4">
+                  <div className="bg-neutral-900 p-4 rounded-xl space-y-2 border border-neutral-700">
+                    <label className="text-sm font-medium text-neutral-300">Output Resolution</label>
+                    <div className="relative">
+                      <select
+                        value={resolutionMode}
+                        onChange={(e) => setResolutionMode(e.target.value)}
+                        className="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-3 text-neutral-100 outline-none focus:border-blue-500 transition-colors appearance-none"
+                      >
+                        <option value="1080p">1080 × 1920 (Vertical 1080p)</option>
+                        <option value="2k">2x Upscale (Previous 2K)</option>
+                      </select>
+                      <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-neutral-400">
+                        <ChevronDown className="w-5 h-5" />
+                      </div>
+                    </div>
+                  </div>
+                  
                   <button
                     onClick={() => setShowSettings(!showSettings)}
                     className="flex items-center text-sm text-neutral-400 hover:text-white transition-colors"

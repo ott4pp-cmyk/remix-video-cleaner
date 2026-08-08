@@ -109,6 +109,18 @@ export class VideoWatermarkAndUpscaleEngine {
         upscaled_canvas.width = width * 2;
         upscaled_canvas.height = height * 2;
         
+        const resolutionMode = opts.resolutionMode || '1080p';
+        
+        const final_canvas = document.createElement('canvas');
+        if (resolutionMode === '2k') {
+            final_canvas.width = width * 2;
+            final_canvas.height = height * 2;
+        } else {
+            final_canvas.width = 1080;
+            final_canvas.height = 1920;
+        }
+        const final_ctx = final_canvas.getContext('2d', { willReadFrequently: true })!;
+        
         const gpu = await WebSR.initWebGPU();
         if (!gpu) {
             throw new Error("WebGPU is not supported by your browser. Required for upscaling.");
@@ -125,7 +137,9 @@ export class VideoWatermarkAndUpscaleEngine {
         const target = new BufferTarget();
         const output = new Output({ format: new Mp4OutputFormat(), target });
 
-        const videoSource = new CanvasSource(upscaled_canvas, {
+        const encode_canvas = resolutionMode === '2k' ? upscaled_canvas : final_canvas;
+
+        const videoSource = new CanvasSource(encode_canvas, {
             codec: 'avc',
             bitrate: QUALITY_HIGH,
             keyFrameInterval: 2,
@@ -193,6 +207,11 @@ export class VideoWatermarkAndUpscaleEngine {
             const bmp = await createImageBitmap(canvas);
             await websr.render(bmp as any);
             bmp.close();
+            
+            // Draw to fixed 1080x1920 resolution
+            if (resolutionMode !== '2k') {
+                final_ctx.drawImage(upscaled_canvas, 0, 0, final_canvas.width, final_canvas.height);
+            }
 
             await videoSource.add(timestamp, dur);
             
@@ -249,8 +268,8 @@ export class VideoWatermarkAndUpscaleEngine {
             originalUrl,
             ext: 'mp4',
             mime: 'video/mp4',
-            width: width * 2,
-            height: height * 2,
+            width: final_canvas.width,
+            height: final_canvas.height,
         };
     }
 }
