@@ -1,14 +1,21 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Download, Loader2, Settings2, ChevronDown } from 'lucide-react';
+import { Upload, Download, Loader2, Settings2, ChevronDown, Trash2, Plus, CheckCircle2, Play } from 'lucide-react';
 import { VideoWatermarkAndUpscaleEngine, VIDEO_DEFAULTS } from './engine/processor';
 
+interface VideoTask {
+  id: string;
+  file: File;
+  progress: number;
+  status: string | null;
+  resultUrl: string | null;
+  error: string | null;
+  isProcessing: boolean;
+  isComplete: boolean;
+}
+
 export default function App() {
-  const [file, setFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState<string | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<VideoTask[]>([]);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   
   // Settings state
   const [gain, setGain] = useState(VIDEO_DEFAULTS.gain);
@@ -20,103 +27,207 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const addFiles = (newFiles: FileList | File[]) => {
+    const videoFiles = Array.from(newFiles).filter(f => f.type.startsWith('video/'));
+    const newTasks: VideoTask[] = videoFiles.map(file => ({
+      id: Math.random().toString(36).substring(7),
+      file,
+      progress: 0,
+      status: null,
+      resultUrl: null,
+      error: null,
+      isProcessing: false,
+      isComplete: false
+    }));
+    setTasks(prev => [...prev, ...newTasks]);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-      setResultUrl(null);
-      setError(null);
-      setProgress(0);
+      addFiles(e.target.files);
     }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.type.startsWith('video/')) {
-        setFile(droppedFile);
-        setResultUrl(null);
-        setError(null);
-        setProgress(0);
-      }
+      addFiles(e.dataTransfer.files);
     }
   };
 
-  const handleProcess = async () => {
-    if (!file) return;
+  const removeTask = (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
 
-    setIsProcessing(true);
-    setError(null);
-    setProgress(0);
+  const updateTask = (id: string, updates: Partial<VideoTask>) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  };
 
+  const processBatch = async () => {
+    setIsBatchProcessing(true);
+    
     try {
       if (!VideoWatermarkAndUpscaleEngine.isSupported()) {
         throw new Error('Your browser does not support the required WebCodecs APIs.');
       }
-
+      
       const engine = await VideoWatermarkAndUpscaleEngine.create();
-      const result = await engine.process(file, {
-        gain,
-        sizeScale,
-        offsetX,
-        offsetY,
-        resolutionMode,
-        onProgress: (p: any) => {
-          setProgress(Math.round(p.progress * 100));
-          if (p.status && p.currentFrame !== undefined) {
-            setStatus(`${p.status} - Frame ${p.currentFrame} of ${p.totalFrames}`);
-          }
+      
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        if (task.isComplete || task.isProcessing) continue;
+        
+        updateTask(task.id, { isProcessing: true, error: null, progress: 0, status: 'Starting...' });
+        
+        try {
+          const result = await engine.process(task.file, {
+            gain,
+            sizeScale,
+            offsetX,
+            offsetY,
+            resolutionMode,
+            onProgress: (p: any) => {
+              const progress = Math.round(p.progress * 100);
+              let status = p.status || 'Processing...';
+              if (p.status && p.currentFrame !== undefined) {
+                status = `${p.status} - Frame ${p.currentFrame} of ${p.totalFrames}`;
+              }
+              updateTask(task.id, { progress, status });
+            }
+          });
+          
+          updateTask(task.id, {
+            isProcessing: false,
+            isComplete: true,
+            resultUrl: result.url,
+            status: 'Complete',
+            progress: 100
+          });
+        } catch (err: any) {
+          console.error(`Error processing ${task.file.name}:`, err);
+          updateTask(task.id, {
+            isProcessing: false,
+            error: err.message || 'An error occurred',
+            status: 'Failed'
+          });
         }
-      });
-
-      setResultUrl(result.url);
+      }
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'An error occurred during processing.');
+      alert(err.message || 'Fatal error initializing engine');
     } finally {
-      setIsProcessing(false);
+      setIsBatchProcessing(false);
     }
   };
 
+  const hasPendingTasks = tasks.some(t => !t.isComplete && !t.isProcessing && !t.error);
+
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-100 flex flex-col items-center justify-center p-4">
-      <div className="max-w-xl w-full bg-neutral-800 rounded-2xl shadow-xl overflow-hidden border border-neutral-700">
+    <div className="min-h-screen bg-neutral-900 text-neutral-100 flex flex-col items-center p-4 py-12">
+      <div className="max-w-2xl w-full bg-neutral-800 rounded-2xl shadow-xl overflow-hidden border border-neutral-700">
         <div className="p-8">
           <h1 className="text-2xl font-semibold mb-2">Clean & Upscale</h1>
           <p className="text-neutral-400 mb-8">
-            Automatically remove the Gemini watermark and upscale your video using AI.
+            Automatically remove the Gemini watermark and upscale your videos using AI. Batch processing supported.
           </p>
 
-          {!file ? (
-            <div
-              className="border-2 border-dashed border-neutral-600 rounded-xl p-12 text-center cursor-pointer hover:border-blue-500 hover:bg-neutral-700/30 transition-colors"
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-            >
-              <Upload className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-              <p className="text-lg font-medium">Click or drag a video to upload</p>
-              <p className="text-sm text-neutral-500 mt-2">MP4, WebM, MOV</p>
-            </div>
-          ) : (
+          <div
+            className="border-2 border-dashed border-neutral-600 rounded-xl p-8 mb-8 text-center cursor-pointer hover:border-blue-500 hover:bg-neutral-700/30 transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+          >
+            <Upload className="w-10 h-10 mx-auto text-neutral-400 mb-4" />
+            <p className="text-base font-medium">Click or drag videos here</p>
+            <p className="text-sm text-neutral-500 mt-2">MP4, WebM, MOV</p>
+          </div>
+          
+          <input
+            type="file"
+            accept="video/*"
+            multiple
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
+
+          {tasks.length > 0 && (
             <div className="space-y-6">
-              <div className="bg-neutral-900 rounded-xl p-4 flex items-center justify-between">
-                <span className="truncate flex-1 font-medium">{file.name}</span>
-                {!isProcessing && !resultUrl && (
-                  <button
-                    onClick={() => {
-                      setFile(null);
-                      setResultUrl(null);
-                    }}
-                    className="text-sm text-red-400 hover:text-red-300 ml-4"
-                  >
-                    Change
-                  </button>
-                )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-medium">Queue ({tasks.length})</h2>
+                  {tasks.some(t => t.isComplete) && !isBatchProcessing && (
+                     <button 
+                       onClick={() => setTasks(tasks.filter(t => !t.isComplete))}
+                       className="text-sm text-neutral-400 hover:text-white"
+                     >
+                       Clear Completed
+                     </button>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {tasks.map((task) => (
+                    <div key={task.id} className="bg-neutral-900 rounded-xl p-4 border border-neutral-700 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="truncate flex-1 font-medium text-sm pr-4">{task.file.name}</span>
+                        {!task.isProcessing && !task.isComplete && (
+                          <button
+                            onClick={() => removeTask(task.id)}
+                            className="text-neutral-500 hover:text-red-400 p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {task.isComplete && (
+                          <CheckCircle2 className="w-5 h-5 text-green-500" />
+                        )}
+                      </div>
+                      
+                      {task.isProcessing && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-blue-400 truncate max-w-[200px]">{task.status}</span>
+                            <span>{task.progress}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                              style={{ width: `${task.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      
+                      {task.error && (
+                        <div className="text-xs text-red-400 bg-red-400/10 p-2 rounded-lg">
+                          Error: {task.error}
+                        </div>
+                      )}
+                      
+                      {task.isComplete && task.resultUrl && (
+                        <div className="flex items-center gap-3 pt-2 border-t border-neutral-800">
+                           <video 
+                             src={task.resultUrl} 
+                             className="w-20 h-20 object-cover rounded-lg bg-black" 
+                             controls
+                             preload="metadata"
+                           />
+                           <a
+                             href={task.resultUrl}
+                             download={`cleaned_${task.file.name}`}
+                             className="flex-1 flex items-center justify-center py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-sm font-medium transition-colors"
+                           >
+                             <Download className="w-4 h-4 mr-2" />
+                             Download
+                           </a>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {!resultUrl && !isProcessing && (
-                <div className="space-y-4">
+              {!isBatchProcessing && hasPendingTasks && (
+                <div className="pt-6 border-t border-neutral-800 space-y-4">
                   <div className="bg-neutral-900 p-4 rounded-xl space-y-2 border border-neutral-700">
                     <label className="text-sm font-medium text-neutral-300">Output Resolution</label>
                     <div className="relative">
@@ -221,81 +332,27 @@ export default function App() {
                   )}
 
                   <button
-                    onClick={handleProcess}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium text-lg transition-colors"
+                    onClick={processBatch}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium text-lg transition-colors flex items-center justify-center gap-2"
                   >
-                    Process Video
+                    <Play className="w-5 h-5 fill-current" />
+                    Process {tasks.filter(t => !t.isComplete && !t.isProcessing && !t.error).length} Videos
                   </button>
                 </div>
               )}
-
-              {isProcessing && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-blue-400 font-medium">{status || 'Processing...'}</span>
-                    <span className="font-medium">{progress}%</span>
-                  </div>
-                  <div className="h-2 w-full bg-neutral-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all duration-300 ease-out"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-center text-sm text-neutral-400 pt-2">
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    This runs entirely in your browser. Large files will take a while.
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-sm">
-                  {error}
-                </div>
-              )}
-
-              {resultUrl && (
-                <div className="space-y-6 pt-4 border-t border-neutral-700">
-                  <h3 className="font-medium text-lg text-green-400">Processing Complete!</h3>
-                  <video
-                    src={resultUrl}
-                    controls
-                    className="w-full rounded-xl bg-black"
-                  />
-                  <a
-                    href={resultUrl}
-                    download={`cleaned_upscaled_${file.name}`}
-                    className="w-full flex items-center justify-center py-4 bg-white text-black hover:bg-neutral-200 rounded-xl font-medium text-lg transition-colors"
-                  >
-                    <Download className="w-5 h-5 mr-2" />
-                    Download Video
-                  </a>
-                  <button
-                    onClick={() => {
-                      setFile(null);
-                      setResultUrl(null);
-                      setProgress(0);
-                      setStatus(null);
-                      setError(null);
-                    }}
-                    className="w-full py-4 bg-transparent border-2 border-neutral-700 hover:border-neutral-500 hover:bg-neutral-800 rounded-xl font-medium text-lg transition-colors"
-                  >
-                    Process Another Video
-                  </button>
-
+              
+              {isBatchProcessing && (
+                <div className="pt-6 border-t border-neutral-800 text-center space-y-2">
+                   <div className="flex items-center justify-center text-sm text-neutral-400">
+                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                     Processing batch... Please keep this tab open.
+                   </div>
                 </div>
               )}
             </div>
           )}
         </div>
       </div>
-      <input
-        type="file"
-        accept="video/*"
-        className="hidden"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-      />
     </div>
   );
 }
