@@ -238,6 +238,7 @@ export default function App() {
                       >
                         <option value="1080p">1080 × 1920 (Vertical 1080p)</option>
                         <option value="2k">2x Upscale (Previous 2K)</option>
+                        <option value="original">Original Size (No Upscale)</option>
                       </select>
                       <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-neutral-400">
                         <ChevronDown className="w-5 h-5" />
