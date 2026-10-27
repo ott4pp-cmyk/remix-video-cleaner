@@ -1,6 +1,6 @@
 {
   "name": "Remix AI Video Cleaner",
-  "description": "Automatically remove Gemini video watermarks and upscale the video with AI in your browser.",
+  "description": "Remove Gemini video watermarks at original resolution and extract the lossless final frame with automatic dual download.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
